@@ -1,0 +1,13 @@
+{
+  "name": "rewind",
+  "owner": {
+    "name": "Andrea Sportello"
+  },
+  "plugins": [
+    {
+      "name": "rewind",
+      "source": "./"
+    }
+  ],
+  "description": "Rewind: rivedi le diff di ogni turno di Claude Code"
+}

@@ -1,0 +1,10 @@
+{
+  "name": "rewind",
+  "version": "0.4.0",
+  "description": "Registra ogni Edit/Write di un turno, le rivedi una diff alla volta con /rewind e ripristini i file a prima della modifica. Storico illimitato su disco.",
+  "author": {
+    "name": "Andrea Sportello"
+  },
+  "types": "./types/index.d.ts",
+  "license": "MIT"
+}

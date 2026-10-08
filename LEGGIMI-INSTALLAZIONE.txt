@@ -1,0 +1,12 @@
+INSTALLARE REWIND (mod per Claude Code)
+
+1. Estrai lo zip dove vuoi (anche sul Desktop).
+2. Windows: doppio clic su INSTALLA.bat
+   Mac/Linux: apri il terminale nella cartella ed esegui ./install.sh
+   Lo script crea da solo la cartella .claude\mods (se non esiste), ci copia la mod
+   e la installa. Dopo puoi cancellare la cartella estratta.
+3. Se usi Claude Desktop: chiudilo del tutto (icona nella barra -> Esci) e riaprilo.
+4. Apri una NUOVA sessione Code, fai fare a Claude una modifica a un file e scrivi /rewind.
+
+Serve Claude Code recente (provato con 2.1.289 e 2.1.292) installato sul computer.
+Se non compaiono i pulsanti: /rewind text
