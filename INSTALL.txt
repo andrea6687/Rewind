@@ -1,0 +1,14 @@
+English · Italiano: LEGGIMI-INSTALLAZIONE.txt
+
+INSTALL REWIND (mod for Claude Code)
+
+1. Extract the zip wherever you like (the Desktop is fine).
+2. Windows: double-click INSTALLA.bat
+   Mac/Linux: open a terminal in the folder and run ./install.sh
+   The script creates the .claude\mods folder on its own (if it does not exist), copies the mod
+   into it and installs it. Afterwards you can delete the extracted folder.
+3. If you use Claude Desktop: quit it completely (tray icon -> Quit) and open it again.
+4. Open a NEW Code session, have Claude change a file, and type /rewind.
+
+You need a recent Claude Code (tested with 2.1.289 and 2.1.292) installed on the computer.
+If the buttons do not appear: /rewind text

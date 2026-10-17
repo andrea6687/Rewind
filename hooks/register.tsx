@@ -117,7 +117,7 @@ async function showTurn($: $, base: ReplayView, pos: number, entry: number): Pro
       notice: null,
     }))
   } catch (err) {
-    await update($, view, () => ({ ...base, mode: 'diff' as const, turnPos: pos, turn: null, error: `Impossibile leggere ${name}: ${String(err)}`, confirm: null, notice: null }))
+    await update($, view, () => ({ ...base, mode: 'diff' as const, turnPos: pos, turn: null, error: `Could not read ${name}: ${String(err)}`, confirm: null, notice: null }))
   }
 }
 
@@ -159,8 +159,8 @@ async function loadView($: $, back: number | 'history'): Promise<{ count: number
     await showTurn($, base, Math.min(Math.max(0, back - 1), Math.max(0, files.length - 1)), 0)
   }
   const what = files.length === 0
-    ? 'nessuna modifica registrata finora'
-    : back === 'history' ? `storico, ${files.length} turni` : `${files.length} turni registrati`
+    ? 'no changes recorded yet'
+    : back === 'history' ? `history, ${files.length} turns` : `${files.length} turns recorded`
   return { count: files.length, what }
 }
 
@@ -168,18 +168,18 @@ async function loadView($: $, back: number | 'history'): Promise<{ count: number
 async function openReplay($: $, back: number | 'history', forceInline: boolean): Promise<string> {
   const loaded = await loadView($, back)
   const seq = (await read($, view)).inlineSeq + 1
-  const where = ` Cartella storico: ${await historyDir($)}`
-  const hint = ' Se non vedi i pulsanti: /rewind text.'
-  let reason = 'richiesto con /rewind inline'
+  const where = ` History folder: ${await historyDir($)}`
+  const hint = ' If you do not see the buttons: /rewind text.'
+  let reason = 'requested with /rewind inline'
   if (!forceInline) {
     const opened = await $.ui.open({ id: PANE, title: TITLE, focus: true, closeOnEscape: true, rows: PANE_ROWS }).catch(err => ({ isPlaced: false as const, reason: String(err) }))
-    if (opened.isPlaced) return `🎭 Rewind aperto nel pannello (${loaded.what}).${where}${hint}`
+    if (opened.isPlaced) return `🎭 Rewind opened in the panel (${loaded.what}).${where}${hint}`
     reason = opened.reason
     await $.ui.close({ id: PANE }).catch(() => undefined)
   }
   // no pane here: the output row of this run draws the viewer instead
   await update($, view, now => ({ ...now, inlineSeq: seq }))
-  return `🎭 Rewind #${seq} (${loaded.what}). Pannello non disponibile qui (${reason}): lo mostro in questa riga.${where}${hint}`
+  return `🎭 Rewind #${seq} (${loaded.what}). Panel not available here (${reason}): showing it in this row.${where}${hint}`
 }
 
 /** The viewer as text: open what was asked for, or act on what is open. */
@@ -198,7 +198,7 @@ async function textReply($: $, act: string, back: number | 'history', page: numb
   if (act === 'close') {
     await update($, view, now => ({ ...now, closed: true, confirm: null, notice: null }))
     await $.ui.close({ id: PANE }).catch(() => undefined)
-    return '🎭 Rewind chiuso. `/rewind` per riaprirlo.'
+    return '🎭 Rewind closed. `/rewind` to open it again.'
   }
   if (act === 'next') await step($, 1)
   else if (act === 'prev') await step($, -1)
@@ -216,9 +216,9 @@ async function textReply($: $, act: string, back: number | 'history', page: numb
   else if (act === 'file') await askRestore($, 'file')
   else if (act === 'yes') {
     const now = await read($, view)
-    if (now.confirm === null) await update($, view, cur => ({ ...cur, notice: { isOk: false, text: 'Niente da confermare: prima `/rewind restore`.' } }))
+    if (now.confirm === null) await update($, view, cur => ({ ...cur, notice: { isOk: false, text: 'Nothing to confirm: run `/rewind restore` first.' } }))
     else await doRestore($, now.confirm.mode)
-  } else if (act === 'no') await update($, view, now => ({ ...now, confirm: null, notice: { isOk: true, text: 'Ripristino annullato.' } }))
+  } else if (act === 'no') await update($, view, now => ({ ...now, confirm: null, notice: { isOk: true, text: 'Restore cancelled.' } }))
   v = await read($, view)
   return v.mode === 'history' ? renderHistory(v, page) : renderViewer(v)
 }
@@ -278,31 +278,31 @@ async function inspect($: $, plan: RestorePlan): Promise<Inspection> {
 /** Backs the current file up, then writes the old text back or deletes the file. */
 async function runRestore($: $, plan: RestorePlan, backupFolder: string): Promise<RestoreOutcome> {
   const seen = await inspect($, plan)
-  if (seen.isAlreadyDone) return { isOk: true, text: `Niente da fare: ${fileName(plan.path)} è già ${plan.before === null ? 'assente' : "com'era prima della modifica"}.` }
+  if (seen.isAlreadyDone) return { isOk: true, text: `Nothing to do: ${fileName(plan.path)} is already ${plan.before === null ? 'absent' : 'as it was before the change'}.` }
   let backup = ''
   if (seen.exists) {
-    if (seen.currentText === undefined) return { isOk: false, text: 'Non tocco il file: non riesco a salvarne un backup (illeggibile o troppo grande).' }
+    if (seen.currentText === undefined) return { isOk: false, text: 'Leaving the file untouched: could not save a backup (unreadable or too large).' }
     try {
       backup = `${backupFolder}/${await $.clock.now()}_${fileName(plan.path).replace(/[^\w.-]+/g, '_')}`
       await $.fs.write(backup, seen.currentText)
     } catch (err) {
-      return { isOk: false, text: `Non tocco il file: backup non riuscito (${String(err).slice(0, 120)}).` }
+      return { isOk: false, text: `Leaving the file untouched: backup failed (${String(err).slice(0, 120)}).` }
     }
   }
-  const saved = backup === '' ? '' : ` Backup di prima del ripristino: ${backup}`
+  const saved = backup === '' ? '' : ` Backup from before the restore: ${backup}`
   try {
     if (plan.before === null) {
       const argv = isWindowsPath(plan.path) ? ['cmd', '/d', '/c', 'del', '/f', '/q', plan.path] : ['rm', '-f', '--', plan.path]
       const ran = await $.process.run(argv)
-      if (await $.fs.exists(plan.path)) return { isOk: false, text: `Il file è ancora lì (uscita ${ran.exitCode}): ${ran.stderr.trim().slice(0, 150)}.${saved}` }
-      return { isOk: true, text: `Eliminato ${plan.path}.${saved}` }
+      if (await $.fs.exists(plan.path)) return { isOk: false, text: `The file is still there (exit ${ran.exitCode}): ${ran.stderr.trim().slice(0, 150)}.${saved}` }
+      return { isOk: true, text: `Deleted ${plan.path}.${saved}` }
     }
     await $.fs.write(plan.path, plan.before)
     const written = await $.fs.read(plan.path).catch(() => undefined)
-    if (written !== plan.before) return { isOk: false, text: `Scrittura non verificata su ${plan.path}.${saved}` }
-    return { isOk: true, text: `Ripristinato ${plan.path}.${saved}` }
+    if (written !== plan.before) return { isOk: false, text: `Write not verified on ${plan.path}.${saved}` }
+    return { isOk: true, text: `Restored ${plan.path}.${saved}` }
   } catch (err) {
-    return { isOk: false, text: `Ripristino non riuscito (${String(err).slice(0, 150)}).${saved}` }
+    return { isOk: false, text: `Restore failed (${String(err).slice(0, 150)}).${saved}` }
   }
 }
 
@@ -323,12 +323,12 @@ async function askRestore($: $, mode: 'one' | 'file'): Promise<void> {
   if (v.turn === null) return
   const planned = planRestore(v.turn, v.entry, mode)
   if ('reason' in planned) {
-    await update($, view, now => ({ ...now, confirm: null, notice: { isOk: false, text: `Ripristino non disponibile: ${planned.reason}.` } }))
+    await update($, view, now => ({ ...now, confirm: null, notice: { isOk: false, text: `Restore unavailable: ${planned.reason}.` } }))
     return
   }
   const seen = await inspect($, planned.plan)
   if (seen.isAlreadyDone) {
-    await update($, view, now => ({ ...now, confirm: null, notice: { isOk: true, text: 'Il file è già com\'era prima della modifica: niente da fare.' } }))
+    await update($, view, now => ({ ...now, confirm: null, notice: { isOk: true, text: 'The file is already as it was before the change: nothing to do.' } }))
     return
   }
   const { message, isRisky } = describe(planned.plan, seen, mode)
@@ -341,7 +341,7 @@ async function doRestore($: $, mode: 'one' | 'file'): Promise<void> {
   if (v.turn === null) return
   const planned = planRestore(v.turn, v.entry, mode)
   if ('reason' in planned) {
-    await update($, view, now => ({ ...now, confirm: null, notice: { isOk: false, text: `Ripristino non disponibile: ${planned.reason}.` } }))
+    await update($, view, now => ({ ...now, confirm: null, notice: { isOk: false, text: `Restore unavailable: ${planned.reason}.` } }))
     return
   }
   const outcome = await runRestore($, planned.plan, await backupDir($))
@@ -352,8 +352,8 @@ export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await $.command.register({
       name: 'rewind',
-      description: 'Rivedi le modifiche (Edit/Write) dei turni, una diff alla volta',
-      argumentHint: '[n | storico | next | prev | restore | yes | no | text | inline]',
+      description: 'Review a turn\'s changes (Edit/Write), one diff at a time',
+      argumentHint: '[n | history | next | prev | restore | yes | no | text | inline]',
       immediate: true,
     })
     return next(e)
@@ -413,9 +413,9 @@ export const register: Register = on => {
       const dir = await historyDir($)
       await $.fs.write(`${dir}/${turnFileName(startedAt, entries.length, project)}`, JSON.stringify(record))
       const n = entries.length
-      $.ui.toast(`🎭 ${n} ${n === 1 ? 'modifica registrata' : 'modifiche registrate'} · /rewind per rivederle`, { timeoutMs: TOAST_SAVED_MS })
+      $.ui.toast(`🎭 ${n} ${n === 1 ? 'change recorded' : 'changes recorded'} · /rewind to review them`, { timeoutMs: TOAST_SAVED_MS })
     } catch (err) {
-      $.ui.toast(`Rewind: salvataggio non riuscito (${String(err).slice(0, 120)})`, { timeoutMs: TOAST_FAILED_MS })
+      $.ui.toast(`Rewind: save failed (${String(err).slice(0, 120)})`, { timeoutMs: TOAST_FAILED_MS })
     }
     return done
   })
@@ -438,7 +438,7 @@ export const register: Register = on => {
     const wantsText = words.some(w => w === 'text' || w === 'testo') || act !== '' || (!wantsPane && !wantsInline && e.origin.kind !== 'composer')
     if (wantsText) {
       const text = await textReply($, isHistory && act === '' ? 'history' : act, isHistory ? 'history' : number ?? 1, isHistory ? number ?? 1 : 1)
-      return { text: `${text}\n\n_(modo testo · origine: ${e.origin.kind})_` }
+      return { text: `${text}\n\n_(text mode · origin: ${e.origin.kind})_` }
     }
     if (isHistory) return { text: await openReplay($, 'history', wantsInline) }
     return { text: await openReplay($, number ?? 1, wantsInline) }
@@ -449,7 +449,7 @@ export const register: Register = on => {
     try {
       return await drawViewer($, e, await read($, view))
     } catch (err) {
-      return <Text color="error">Rewind: errore nel disegno ({String(err).slice(0, 300)})</Text>
+      return <Text color="error">Rewind: drawing error ({String(err).slice(0, 300)})</Text>
     }
   })
 
@@ -458,11 +458,11 @@ export const register: Register = on => {
     const v = await read($, view)
     if (seq === 0 || seq !== v.inlineSeq) return next(e)
     const { Text } = $.ui.resolve(e)
-    if (v.closed) return <Text dimColor>🎭 Rewind chiuso · /rewind per riaprirlo</Text>
+    if (v.closed) return <Text dimColor>🎭 Rewind closed · /rewind to open it again</Text>
     try {
       return await drawViewer($, e, v)
     } catch (err) {
-      return <Text color="error">Rewind: errore nel disegno ({String(err).slice(0, 300)})</Text>
+      return <Text color="error">Rewind: drawing error ({String(err).slice(0, 300)})</Text>
     }
   })
 }
@@ -476,7 +476,7 @@ async function drawViewer($: $, e: any, v: ReplayView) {
       await $.ui.close({ id: PANE }).catch(() => undefined)
     }
     const total = v.files.length
-    const scopeLabel = v.scope === 'project' ? 'questo progetto' : 'tutti i progetti'
+    const scopeLabel = v.scope === 'project' ? 'this project' : 'all projects'
 
     if (v.mode === 'history') {
       const pages = Math.max(1, Math.ceil(total / PAGE))
@@ -489,17 +489,17 @@ async function drawViewer($: $, e: any, v: ReplayView) {
       }
       return (
         <Box flexDirection="column">
-          <Text bold>🎭 Storico · {scopeLabel}</Text>
+          <Text bold>🎭 History · {scopeLabel}</Text>
           <Text dimColor>
-            {total} {total === 1 ? 'turno' : 'turni'} · pagina {page + 1}/{pages} · premi il numero per aprire
+            {total} {total === 1 ? 'turn' : 'turns'} · page {page + 1}/{pages} · press a number to open
           </Text>
           <Box flexDirection="column" marginTop={1}>
-            {slice.length === 0 && <Text dimColor>Nessun turno registrato qui.</Text>}
+            {slice.length === 0 && <Text dimColor>No turns recorded here.</Text>}
             {slice.map((name, i) => {
               const meta = parseFileName(name)
               const pos = page * PAGE + i
               const label = meta
-                ? `${formatWhen(meta.startedAt)} · ${meta.project} · ${meta.count} ${meta.count === 1 ? 'modifica' : 'modifiche'}`
+                ? `${formatWhen(meta.startedAt)} · ${meta.project} · ${meta.count} ${meta.count === 1 ? 'change' : 'changes'}`
                 : name
               return (
                 <Button
@@ -514,10 +514,10 @@ async function drawViewer($: $, e: any, v: ReplayView) {
             })}
           </Box>
           <Box flexDirection="row" gap={1} marginTop={1} flexWrap="wrap">
-            <Button key="newer" hotkey="p" label="◀ Più recenti" dimColor={page === 0} onPress={() => update($, view, now => ({ ...now, page: Math.max(0, page - 1) }))} />
-            <Button key="older" hotkey="n" label="Più vecchi ▶" dimColor={page >= pages - 1} onPress={() => update($, view, now => ({ ...now, page: Math.min(pages - 1, page + 1) }))} />
-            <Button key="scope" hotkey="a" label={v.scope === 'project' ? 'Tutti i progetti' : 'Solo questo progetto'} onPress={toggleScope} />
-            {v.turn !== null && <Button key="back" hotkey="r" label="Torna alla diff" onPress={() => update($, view, now => ({ ...now, mode: 'diff' as const }))} />}
+            <Button key="newer" hotkey="p" label="◀ Newer" dimColor={page === 0} onPress={() => update($, view, now => ({ ...now, page: Math.max(0, page - 1) }))} />
+            <Button key="older" hotkey="n" label="Older ▶" dimColor={page >= pages - 1} onPress={() => update($, view, now => ({ ...now, page: Math.min(pages - 1, page + 1) }))} />
+            <Button key="scope" hotkey="a" label={v.scope === 'project' ? 'All projects' : 'This project only'} onPress={toggleScope} />
+            {v.turn !== null && <Button key="back" hotkey="r" label="Back to diff" onPress={() => update($, view, now => ({ ...now, mode: 'diff' as const }))} />}
             <Button key="close" hotkey="c" role="dismiss" label="Close" onPress={close} />
           </Box>
         </Box>
@@ -530,9 +530,9 @@ async function drawViewer($: $, e: any, v: ReplayView) {
       return (
         <Box flexDirection="column">
           <Text bold>🎭 Rewind</Text>
-          <Text dimColor>{v.error ?? 'Nessuna modifica registrata finora. Le Edit/Write di ogni turno compaiono qui a fine turno.'}</Text>
+          <Text dimColor>{v.error ?? 'No changes recorded yet. Each turn\'s Edit/Write shows up here at the end of the turn.'}</Text>
           <Box flexDirection="row" gap={1} marginTop={1}>
-            {total > 0 && <Button key="history" hotkey="h" label="Storico" onPress={toHistory} />}
+            {total > 0 && <Button key="history" hotkey="h" label="History" onPress={toHistory} />}
             <Button key="close" hotkey="c" role="dismiss" label="Close" onPress={close} />
           </Box>
         </Box>
@@ -550,14 +550,14 @@ async function drawViewer($: $, e: any, v: ReplayView) {
     const planOne = planRestore(turn, Math.min(v.entry, turn.entries.length - 1), 'one')
     const planFile = planRestore(turn, Math.min(v.entry, turn.entries.length - 1), 'file')
     const sameFile = turn.entries.filter(x => x.path === entry.path).length
-    const kindLabel = entry.kind === 'create' ? 'nuovo file' : entry.kind === 'update' ? 'riscritto' : 'modificato'
+    const kindLabel = entry.kind === 'create' ? 'new file' : entry.kind === 'update' ? 'rewritten' : 'modified'
     const scrollBy = (delta: number) =>
       update($, view, now => ({ ...now, scroll: Math.min(Math.max(0, lines - room), Math.max(0, scroll + delta)) }))
 
     return (
       <Box flexDirection="column">
         <Text bold>
-          🎭 v{VERSION} · Turno {total - v.turnPos}/{total} · {formatWhen(turn.startedAt)} · {turn.project}
+          🎭 v{VERSION} · Turn {total - v.turnPos}/{total} · {formatWhen(turn.startedAt)} · {turn.project}
         </Text>
         {turn.prompt !== '' && (
           <Text dimColor italic wrap="truncate-end">
@@ -569,27 +569,27 @@ async function drawViewer($: $, e: any, v: ReplayView) {
           <Button key="next" hotkey="n" variant="primary" label="Next ▶" dimColor={!hasNext} onPress={() => step($, 1)} />
           <Button key="close" hotkey="c" role="dismiss" label="Close" onPress={close} />
           {v.confirm !== null ? (
-            <Button key="confirm" hotkey="y" variant="primary" label="✔ Conferma ripristino" onPress={() => doRestore($, v.confirm?.mode ?? 'one')} />
+            <Button key="confirm" hotkey="y" variant="primary" label="✔ Confirm restore" onPress={() => doRestore($, v.confirm?.mode ?? 'one')} />
           ) : (
             'plan' in planOne && (
-              <Button key="restore" hotkey="r" label={planOne.plan.before === null ? '↩ Elimina file creato' : '↩ Ripristina'} onPress={() => askRestore($, 'one')} />
+              <Button key="restore" hotkey="r" label={planOne.plan.before === null ? '↩ Delete created file' : '↩ Restore'} onPress={() => askRestore($, 'one')} />
             )
           )}
           {v.confirm !== null ? (
-            <Button key="cancel" hotkey="x" label="✖ Annulla" onPress={() => update($, view, now => ({ ...now, confirm: null }))} />
+            <Button key="cancel" hotkey="x" label="✖ Cancel" onPress={() => update($, view, now => ({ ...now, confirm: null }))} />
           ) : (
             sameFile > 1 && 'plan' in planFile && (
-              <Button key="restore-file" hotkey="u" label="↩ File a inizio turno" onPress={() => askRestore($, 'file')} />
+              <Button key="restore-file" hotkey="u" label="↩ File at turn start" onPress={() => askRestore($, 'file')} />
             )
           )}
-          <Button key="older-turn" hotkey="b" label="⏮ Turno prec." dimColor={v.turnPos + 1 >= total} onPress={() => jumpTurn($, -1)} />
-          <Button key="newer-turn" hotkey="f" label="Turno succ. ⏭" dimColor={v.turnPos === 0} onPress={() => jumpTurn($, 1)} />
-          <Button key="history" hotkey="h" label="Storico" onPress={toHistory} />
+          <Button key="older-turn" hotkey="b" label="⏮ Prev turn" dimColor={v.turnPos + 1 >= total} onPress={() => jumpTurn($, -1)} />
+          <Button key="newer-turn" hotkey="f" label="Next turn ⏭" dimColor={v.turnPos === 0} onPress={() => jumpTurn($, 1)} />
+          <Button key="history" hotkey="h" label="History" onPress={toHistory} />
           {lines > room && <Button key="up" hotkey="k" label="↑" onPress={() => scrollBy(-Math.ceil(room / 2))} />}
           {lines > room && <Button key="down" hotkey="j" label="↓" onPress={() => scrollBy(Math.ceil(room / 2))} />}
         </Box>
         {v.confirm !== null && <Text color={v.confirm.isRisky ? 'warning' : undefined}>{v.confirm.message}</Text>}
-        {v.confirm === null && !('plan' in planOne) && <Text dimColor>↩ Ripristino non disponibile: {planOne.reason}</Text>}
+        {v.confirm === null && !('plan' in planOne) && <Text dimColor>↩ Restore unavailable: {planOne.reason}</Text>}
         {v.notice !== null && (
           <Text color={v.notice.isOk ? 'success' : 'error'}>{v.notice.isOk ? '✔ ' : '✖ '}{v.notice.text}</Text>
         )}
@@ -604,14 +604,14 @@ async function drawViewer($: $, e: any, v: ReplayView) {
         <Text wrap="truncate-start">{entry.path}</Text>
         <Box flexDirection="column">
           {source === '' ? (
-            <Text dimColor>(nessuna differenza da mostrare: file vuoto o invariato)</Text>
+            <Text dimColor>(no difference to show: empty or unchanged file)</Text>
           ) : (
             <Code key="diff" source={source} format="diff" path={entry.path} />
           )}
-          {entry.truncated === true && <Text dimColor>… diff troncata nello storico perché troppo grande</Text>}
+          {entry.truncated === true && <Text dimColor>… diff truncated in the history because it was too large</Text>}
           {lines > room && (
             <Text dimColor>
-              righe {scroll + 1}–{Math.min(lines, scroll + room)} di {lines} · j/k per scorrere
+              lines {scroll + 1}–{Math.min(lines, scroll + room)} of {lines} · j/k to scroll
             </Text>
           )}
         </Box>

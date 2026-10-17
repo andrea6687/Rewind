@@ -1,69 +1,71 @@
 # 🎭 Rewind
 
-Mod per Claude Code (terminale e tab Code di Claude Desktop).
+English · [Italiano](README.it.md)
 
-> Ispirato alla mod *Replay Theater* di ClaudeDevs. Questa è un'implementazione indipendente, non ufficiale e non affiliata ad Anthropic, scritta da zero, che aggiunge storico persistente senza limiti, **ripristino dei file con backup** e un fallback testuale per le app che non disegnano i pulsanti.
+A mod for Claude Code (the terminal and the Code tab of Claude Desktop).
 
-- Registra ogni **Edit** e **Write** andata a buon fine durante un turno, anche quelle dei subagent.
-- A fine turno salva il turno su disco e mostra un toast: `🎭 3 modifiche registrate · /rewind per rivederle`.
-- `/rewind` apre un pannello che mostra le diff **una alla volta**.
+> Inspired by the *Replay Theater* mod by ClaudeDevs. This is an independent, unofficial implementation, not affiliated with Anthropic, written from scratch, that adds unlimited persistent history, **file restore with backup**, and a text fallback for apps that do not draw the buttons.
 
-## Comandi
+- Records every successful **Edit** and **Write** during a turn, including those from subagents.
+- At the end of the turn it saves the turn to disk and shows a toast: `🎭 3 changes recorded · /rewind to review them`.
+- `/rewind` opens a panel that shows the diffs **one at a time**.
 
-| Comando | Cosa fa |
+## Commands
+
+| Command | What it does |
 | --- | --- |
-| `/rewind` | apre l'ultimo turno, prima modifica |
-| `/rewind 5` | apre il 5° turno più recente |
-| `/rewind storico` | apre lo storico (anche `history` o `h`) |
-| `/rewind text` | versione solo testo, senza pulsanti: `/rewind next`, `prev`, `restore`, `yes`, `no`, `storico`, `close` |
-| `/rewind inline` | mostra il visore nella conversazione invece che nel pannello (si combina: `/rewind 3 inline`) |
+| `/rewind` | opens the latest turn, first change |
+| `/rewind 5` | opens the 5th most recent turn |
+| `/rewind history` | opens the history (also `storico` or `h`) |
+| `/rewind text` | text-only version, without buttons: `/rewind next`, `prev`, `restore`, `yes`, `no`, `history`, `close` |
+| `/rewind inline` | shows the viewer in the conversation instead of the panel (they combine: `/rewind 3 inline`) |
 
-Se l'app non può mostrare un pannello (per esempio una versione di Claude Desktop che non li supporta), il visore compare da solo nella risposta di `/rewind`, con gli stessi pulsanti.
+If the app cannot show a panel (for example a version of Claude Desktop that does not support them), the viewer appears on its own in the `/rewind` reply, with the same buttons.
 
-## Tasti nel pannello
+## Keys in the panel
 
-| Tasto | Azione |
+| Key | Action |
 | --- | --- |
-| `p` / `n` | **Prev** / **Next**: modifica precedente o successiva. Arrivato alla prima modifica di un turno, Prev passa all'ultima del turno prima, e così via fino al primo turno registrato |
-| `c` o `Esc` | **Close** |
-| `j` / `k` | scorre una diff lunga |
-| `b` / `f` | salta al turno precedente / successivo |
-| `h` | storico: 10 turni per pagina, `1`…`0` per aprirne uno, `p`/`n` per cambiare pagina, `a` per passare da "questo progetto" a "tutti i progetti" |
+| `p` / `n` | **Prev** / **Next**: previous or next change. On the first change of a turn, Prev moves to the last change of the previous turn, and so on back to the first recorded turn |
+| `c` or `Esc` | **Close** |
+| `j` / `k` | scrolls a long diff |
+| `b` / `f` | jumps to the previous / next turn |
+| `h` | history: 10 turns per page, `1`…`0` to open one, `p`/`n` to change page, `a` to switch from "this project" to "all projects" |
 
-## Ripristinare un file
+## Restoring a file
 
-I pulsanti di ripristino stanno nella stessa riga di Prev/Next/Close:
+The restore buttons are on the same row as Prev/Next/Close:
 
-| Pulsante | Tasto | Cosa fa |
+| Button | Key | What it does |
 | --- | --- | --- |
-| **↩ Ripristina** | `r` | rimette il file com'era prima di questa singola modifica |
-| **↩ File a inizio turno** | `u` | compare se nel turno lo stesso file è stato modificato più volte: lo riporta a prima della prima modifica |
-| **↩ Elimina file creato** | `r` | per i file creati da quella modifica: li elimina |
+| **↩ Restore** | `r` | puts the file back as it was before this single change |
+| **↩ File at turn start** | `u` | shown when the same file was changed more than once in the turn: puts it back to before the first change |
+| **↩ Delete created file** | `r` | for files created by that change: deletes them |
 
-Il ripristino chiede sempre conferma (**✔ Conferma ripristino** / `y`, **✖ Annulla** / `x`), e prima di toccare il file salva il contenuto attuale in `~/.claude/rewind/backups/`, quindi anche un ripristino si può annullare. Se il file è cambiato dopo la modifica (anche per modifiche successive) il messaggio lo dice in evidenza: ripristinando si perdono anche quei cambiamenti.
+Restore always asks for confirmation (**✔ Confirm restore** / `y`, **✖ Cancel** / `x`), and before touching the file it saves the current contents in `~/.claude/rewind/backups/`, so a restore can itself be undone. If the file changed after the change (including later changes) the message says so prominently: restoring also loses those changes.
 
-Limiti: funziona per file di testo UTF-8 fino a circa 400.000 caratteri; per i file più grandi, per le modifiche registrate con versioni precedenti alla 0.2.0 o in turni con moltissime modifiche il pulsante è sostituito dal motivo per cui non è disponibile. Non si possono ripristinare le modifiche fatte dai comandi shell (`Bash`), che il mod non registra.
+Limits: it works for UTF-8 text files up to about 400,000 characters; for larger files, for changes recorded with versions earlier than 0.2.0, or in turns with a great many changes, the button is replaced by the reason it is not available. Changes made by shell commands (`Bash`) cannot be restored; the mod does not record them.
 
-## Dove finisce lo storico
+## Where the history goes
 
-`~/.claude/replay-theater/history/` (o `$CLAUDE_CONFIG_DIR/replay-theater/history/`; la cartella conserva il nome originale così lo storico già registrato resta visibile): un file JSON per ogni turno che ha modificato qualcosa, chiamato `<timestamp>_<n modifiche>_<progetto>.json`. Nessun limite di numero: per fare pulizia cancelli i file vecchi. Una singola diff oltre 150.000 caratteri viene troncata (lo dice il pannello), e così anche un turno oltre ~3 MB.
+`~/.claude/replay-theater/history/` (or `$CLAUDE_CONFIG_DIR/replay-theater/history/`; the folder keeps the original name so history already recorded stays visible): one JSON file for every turn that changed something, named `<timestamp>_<n changes>_<project>.json`. No cap on the number: to clean up, delete the old files. A single diff over 150,000 characters is truncated (the panel says so), and so is a turn over ~3 MB.
 
-## Installazione
+## Installation
 
-### A) Da GitHub (consigliata, una riga)
+### A) From GitHub (recommended, one line)
 
-Metti questa cartella in un repo, per esempio `andrea6687/rewind`, poi da un terminale Claude Code:
+Put this folder in a repo, for example `andrea6687/rewind`, then from a Claude Code terminal:
 
 ```
 /plugin install rewind --marketplace andrea6687/rewind
 ```
 
-Rispondi `y` per aggiungere il marketplace e scegli lo scope **user**. Da quel momento il mod funziona in ogni sessione: terminale e tab Code di Claude Desktop.
+Answer `y` to add the marketplace and choose the **user** scope. From then on the mod works in every session: the terminal and the Code tab of Claude Desktop.
 
-### B) Da cartella locale
+### B) From a local folder
 
-1. Copia la cartella in `~/.claude/mods/rewind`.
-2. In `~/.claude/settings.json` aggiungi:
+1. Copy the folder to `~/.claude/mods/rewind`.
+2. In `~/.claude/settings.json` add:
 
 ```json
 {
@@ -71,9 +73,9 @@ Rispondi `y` per aggiungere il marketplace e scegli lo scope **user**. Da quel m
 }
 ```
 
-3. Riavvia Claude Code o Claude Desktop. Per una prova veloce solo da terminale: `claude --plugin-dir ~/.claude/mods/rewind`.
+3. Restart Claude Code or Claude Desktop. For a quick terminal-only try: `claude --plugin-dir ~/.claude/mods/rewind`.
 
-## Sviluppo
+## Development
 
 ```
 claude plugin validate .

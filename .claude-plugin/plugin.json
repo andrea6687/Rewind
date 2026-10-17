@@ -1,7 +1,7 @@
 {
   "name": "rewind",
   "version": "0.4.0",
-  "description": "Registra ogni Edit/Write di un turno, le rivedi una diff alla volta con /rewind e ripristini i file a prima della modifica. Storico illimitato su disco.",
+  "description": "Records every Edit/Write in a turn, lets you review them one diff at a time with /rewind, and restores files to before the change. Unlimited history on disk.",
   "author": {
     "name": "Andrea Sportello"
   },

@@ -139,7 +139,7 @@ describe('recording and replay', () => {
     await ui.press({ key: 'prev' })
     expect((await ui.find({ type: 'Code' }))?.text).toContain('+UNO')
     await ui.press({ key: 'history' })
-    expect(await ui.findAll({ type: 'Button', text: /modific/ })).toHaveLength(2)
+    expect(await ui.findAll({ type: 'Button', text: /change/ })).toHaveLength(2)
     await ui.press({ key: 'turn-0' })
     expect((await ui.find({ type: 'Code' }))?.text).toContain('+DUE')
     await ui.unmount()
@@ -167,7 +167,7 @@ describe('recording and replay', () => {
     const ui = await $.ui.mount({ plugin: 'rewind', surface: 'desktop', component: 'CommandOutput', props: { command: 'rewind', args: '', text: ran.text ?? '', isErrored: false } as never })
     await ui.press({ key: 'close' })
     expect(await ui.find({ type: 'Code' })).toBeUndefined()
-    expect((await ui.find({ type: 'Text', text: /chiuso/ }))).toBeDefined()
+    expect((await ui.find({ type: 'Text', text: /closed/ }))).toBeDefined()
   })
 })
 
@@ -178,7 +178,7 @@ describe('end-of-turn toasts', () => {
       await $.tool.call({ tool: 'Edit', file_path: '/w/a.ts', old_string: 'b', new_string: 'B' })
     })
     expect(toasts).toEqual([
-      { text: '🎭 1 modifica registrata · /rewind per rivederle', timeoutMs: 10_000 },
+      { text: '🎭 1 change recorded · /rewind to review them', timeoutMs: 10_000 },
     ])
 
     control.failHistoryWrite = true
@@ -187,7 +187,7 @@ describe('end-of-turn toasts', () => {
       await $.tool.call({ tool: 'Write', file_path: '/w/c.ts', content: 'due\n' })
     })
     expect(toasts).toHaveLength(2)
-    expect(toasts[1]?.text.startsWith('Rewind: salvataggio non riuscito')).toBe(true)
+    expect(toasts[1]?.text.startsWith('Rewind: save failed')).toBe(true)
     expect(toasts[1]?.timeoutMs).toBe(15_000)
   })
 })
@@ -210,10 +210,10 @@ describe('restoring a file to before a change', () => {
       const ui = await $.ui.mount({ ...PANE, surface, props: PROPS, ...VIEW })
       await ui.press({ key: 'restore' })
       expect(disk.get('/w/a.txt')).toBe('uno\nDUE\ntre\n') // nothing changes before the yes
-      expect((await ui.find({ type: 'Text', text: /Riportare a\.txt/ }))?.text).not.toContain('ATTENZIONE')
+      expect((await ui.find({ type: 'Text', text: /Put a\.txt back/ }))?.text).not.toContain('WARNING')
       await ui.press({ key: 'confirm' })
       expect(disk.get('/w/a.txt')).toBe('uno\ndue\ntre\n')
-      expect((await ui.find({ type: 'Text', text: /Ripristinato/ }))).toBeDefined()
+      expect((await ui.find({ type: 'Text', text: /Restored/ }))).toBeDefined()
       await ui.unmount()
     }
     const backups = [...disk.entries()].filter(([path]) => path.includes('/replay-theater/backups/'))
@@ -221,7 +221,7 @@ describe('restoring a file to before a change', () => {
     expect(backups.some(([, text]) => text === 'uno\nDUE\ntre\n')).toBe(true)
   })
 
-  test('warns when the file changed since, and Annulla leaves it alone', async ($, on) => {
+  test('warns when the file changed since, and Cancel leaves it alone', async ($, on) => {
     const { disk } = world(on)
     disk.set('/w/b.txt', 'uno\ndue\n')
     await turn($, 't1', 'x', async () => {
@@ -231,7 +231,7 @@ describe('restoring a file to before a change', () => {
     await $.command.run(OPEN)
     const ui = await $.ui.mount({ ...PANE, surface: 'terminal', props: PROPS, ...VIEW })
     await ui.press({ key: 'restore' })
-    expect((await ui.find({ type: 'Text', text: /ATTENZIONE/ }))).toBeDefined()
+    expect((await ui.find({ type: 'Text', text: /WARNING/ }))).toBeDefined()
     await ui.press({ key: 'cancel' })
     expect(disk.get('/w/b.txt')).toBe('scritto da me dopo\n')
     expect(await ui.find({ key: 'confirm' })).toBeUndefined()
@@ -245,7 +245,7 @@ describe('restoring a file to before a change', () => {
     expect(disk.get('/w/nuovo.txt')).toBe('ciao\n')
     await $.command.run(OPEN)
     const ui = await $.ui.mount({ ...PANE, surface: 'terminal', props: PROPS, ...VIEW })
-    expect((await ui.find({ key: 'restore' }))?.text).toContain('Elimina file creato')
+    expect((await ui.find({ key: 'restore' }))?.text).toContain('Delete created file')
     await ui.press({ key: 'restore' })
     await ui.press({ key: 'confirm' })
     expect(disk.has('/w/nuovo.txt')).toBe(false)
@@ -276,7 +276,7 @@ describe('restoring a file to before a change', () => {
     await $.command.run(OPEN)
     const ui = await $.ui.mount({ ...PANE, surface: 'terminal', props: PROPS, ...VIEW })
     expect(await ui.find({ key: 'restore' })).toBeUndefined()
-    expect((await ui.find({ type: 'Text', text: /Ripristino non disponibile/ }))).toBeDefined()
+    expect((await ui.find({ type: 'Text', text: /Restore unavailable/ }))).toBeDefined()
     expect(disk.has('/w/fantasma.txt')).toBe(false)
   })
 
