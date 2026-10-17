@@ -11,12 +11,15 @@ const PRESENTATION = { isFullscreen: true, columns: 120 }
 /** An in-memory disk, a home, a working directory and a pane host beneath the plugin. */
 function world(on: On, cwd = '/work/myproject', placesPanes = true) {
   const disk = new Map<string, string>()
+  const toasts: { text: string; timeoutMs?: number }[] = []
+  const control = { failHistoryWrite: false }
   const clock = mock.clock(on, { now: 1_759_820_000_000 })
   mock.env(on, { HOME: '/home/user' })
   on('turn.start', (_$, e) => ({ turnId: e.turnId }))
   on('turn.complete', (_$, e) => ({ text: e.answer }))
   on('session.cwd', () => ({ value: cwd }))
   on('fs.write', (_$, e) => {
+    if (control.failHistoryWrite && e.path.includes('/history/')) return { deny: 'disco pieno' }
     disk.set(e.path, e.text)
     return { value: undefined }
   })
@@ -37,7 +40,10 @@ function world(on: On, cwd = '/work/myproject', placesPanes = true) {
   }))
   on('ui.open', () => ({ value: placesPanes ? { isPlaced: true as const } : { isPlaced: false as const, reason: 'nessun pannello su questa app' } }))
   on('ui.close', () => ({ value: undefined }))
-  on('ui.toast', () => ({ value: undefined }))
+  on('ui.toast', (_$, e) => {
+    toasts.push({ text: e.text, timeoutMs: e.timeoutMs })
+    return { value: undefined }
+  })
   on('command.run', () => ({ text: '' }))
   // the tools themselves: an Edit and a Write that answer as core does
   on('tool.call', (_$, e) => {
@@ -58,7 +64,7 @@ function world(on: On, cwd = '/work/myproject', placesPanes = true) {
     }
     return { result: 'ok' }
   })
-  return { disk, clock }
+  return { disk, clock, toasts, control }
 }
 
 async function turn($: any, turnId: string, text: string, edits: () => Promise<void>) {
@@ -98,7 +104,7 @@ describe('recording and replay', () => {
     })
     const files = [...disk.keys()].filter(path => path.includes('/history/'))
     expect(files).toHaveLength(1)
-    expect(files[0]).toMatch(/^\/home\/andrea\/\.claude\/replay-theater\/history\/\d{13}_2_myproject\.json$/)
+    expect(files[0]).toMatch(/^\/home\/user\/\.claude\/replay-theater\/history\/\d{13}_2_myproject\.json$/)
     const saved = JSON.parse(disk.get(files[0] as string) as string)
     expect(saved.prompt).toBe('sistema il login')
     expect(saved.entries.map((x: any) => x.kind)).toEqual(['edit', 'create'])
@@ -162,6 +168,27 @@ describe('recording and replay', () => {
     await ui.press({ key: 'close' })
     expect(await ui.find({ type: 'Code' })).toBeUndefined()
     expect((await ui.find({ type: 'Text', text: /chiuso/ }))).toBeDefined()
+  })
+})
+
+describe('end-of-turn toasts', () => {
+  test('the saved toast stays 10s and the failure toast stays 15s', async ($, on) => {
+    const { toasts, control } = world(on)
+    await turn($, 't1', 'sistema', async () => {
+      await $.tool.call({ tool: 'Edit', file_path: '/w/a.ts', old_string: 'b', new_string: 'B' })
+    })
+    expect(toasts).toEqual([
+      { text: '🎭 1 modifica registrata · /rewind per rivederle', timeoutMs: 10_000 },
+    ])
+
+    control.failHistoryWrite = true
+    await turn($, 't2', 'ancora', async () => {
+      await $.tool.call({ tool: 'Write', file_path: '/w/b.ts', content: 'uno\n' })
+      await $.tool.call({ tool: 'Write', file_path: '/w/c.ts', content: 'due\n' })
+    })
+    expect(toasts).toHaveLength(2)
+    expect(toasts[1]?.text.startsWith('Rewind: salvataggio non riuscito')).toBe(true)
+    expect(toasts[1]?.timeoutMs).toBe(15_000)
   })
 })
 
