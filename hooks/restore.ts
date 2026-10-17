@@ -33,20 +33,20 @@ export type RestorePlan = {
 }
 
 const WHY: Record<string, string> = {
-  big: 'il file era troppo grande per salvarne la versione precedente',
-  unreadable: 'il file non era leggibile come testo',
-  budget: 'il turno aveva troppe modifiche per salvare anche le versioni precedenti',
+  big: 'the file was too large to save its previous version',
+  unreadable: 'the file was not readable as text',
+  budget: 'the turn had too many changes to also save the previous versions',
 }
 
 /** What a restore of change `index` (or of the whole file in the turn) would do. */
 export function planRestore(turn: ReplayTurn, index: number, mode: 'one' | 'file'): { plan: RestorePlan } | { reason: string } {
   const entry = turn.entries[index]
-  if (entry === undefined) return { reason: 'modifica non trovata' }
+  if (entry === undefined) return { reason: 'change not found' }
   const same = turn.entries.filter(e => e.path === entry.path)
   const first = mode === 'file' ? same[0] ?? entry : entry
   const last = mode === 'file' ? same[same.length - 1] ?? entry : entry
   if (first.before === undefined) {
-    return { reason: first.beforeSkipped ? WHY[first.beforeSkipped] ?? 'versione precedente non salvata' : 'registrata da una versione precedente del mod' }
+    return { reason: first.beforeSkipped ? WHY[first.beforeSkipped] ?? 'previous version not saved' : 'recorded by an earlier version of the mod' }
   }
   return { plan: { path: entry.path, before: first.before, expectedHash: last.afterHash, changes: mode === 'file' ? same.length : 1 } }
 }
@@ -57,15 +57,15 @@ export const base = (path: string) => path.split(/[\\/]/).pop() ?? path
 /** The question put to the person before anything is touched. */
 export function describe(plan: RestorePlan, seen: Inspection, mode: 'one' | 'file'): { message: string; isRisky: boolean } {
   const name = base(plan.path)
-  const scope = mode === 'file' && plan.changes > 1 ? `a com'era prima delle ${plan.changes} modifiche di questo turno` : "a com'era prima di questa modifica"
+  const scope = mode === 'file' && plan.changes > 1 ? `to how it was before the ${plan.changes} changes in this turn` : 'to how it was before this change'
   let message = plan.before === null
-    ? `Eliminare ${name}, creato da questa modifica?`
-    : `Riportare ${name} ${scope}?`
-  if (seen.exists) message += ' Il contenuto attuale viene salvato prima in un backup.'
-  else if (plan.before !== null) message += ' Il file ora non esiste: lo ricreo.'
+    ? `Delete ${name}, created by this change?`
+    : `Put ${name} back ${scope}?`
+  if (seen.exists) message += ' The current contents are saved to a backup first.'
+  else if (plan.before !== null) message += ' The file does not exist now: I will recreate it.'
   const isRisky = seen.isChanged || seen.isUnverifiable
-  if (seen.isChanged && seen.exists) message += ' ATTENZIONE: il file è cambiato dopo questa modifica (anche per modifiche successive): perderai anche quei cambiamenti.'
-  else if (seen.isUnverifiable) message += ' Non posso verificare se il file è cambiato da allora.'
+  if (seen.isChanged && seen.exists) message += ' WARNING: the file has changed since this change (including later changes): you will lose those changes too.'
+  else if (seen.isUnverifiable) message += ' I cannot verify whether the file has changed since then.'
   return { message, isRisky }
 }
 

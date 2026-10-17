@@ -9,5 +9,5 @@
       "source": "./"
     }
   ],
-  "description": "Rewind: rivedi le diff di ogni turno di Claude Code"
+  "description": "Rewind: review the diffs of every Claude Code turn"
 }

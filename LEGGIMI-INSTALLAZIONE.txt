@@ -1,3 +1,5 @@
+Italiano · English: INSTALL.txt
+
 INSTALLARE REWIND (mod per Claude Code)
 
 1. Estrai lo zip dove vuoi (anche sul Desktop).
