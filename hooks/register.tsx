@@ -30,6 +30,9 @@ const PAGE = 10
 const TEXT_ROWS_STEP = 30
 /** Body rows the pane asks for: controls first, then the diff. */
 const PANE_ROWS = 26
+/** $.ui.toast stays 4s unless timeoutMs is set. The failure line is longer: it has a reason to read. */
+const TOAST_SAVED_MS = 10_000
+const TOAST_FAILED_MS = 15_000
 
 const EMPTY_VIEW: ReplayView = {
   mode: 'diff',
@@ -410,9 +413,9 @@ export const register: Register = on => {
       const dir = await historyDir($)
       await $.fs.write(`${dir}/${turnFileName(startedAt, entries.length, project)}`, JSON.stringify(record))
       const n = entries.length
-      $.ui.toast(`🎭 ${n} ${n === 1 ? 'modifica registrata' : 'modifiche registrate'} · /rewind per rivederle`)
+      $.ui.toast(`🎭 ${n} ${n === 1 ? 'modifica registrata' : 'modifiche registrate'} · /rewind per rivederle`, { timeoutMs: TOAST_SAVED_MS })
     } catch (err) {
-      $.ui.toast(`Rewind: salvataggio non riuscito (${String(err).slice(0, 120)})`)
+      $.ui.toast(`Rewind: salvataggio non riuscito (${String(err).slice(0, 120)})`, { timeoutMs: TOAST_FAILED_MS })
     }
     return done
   })
