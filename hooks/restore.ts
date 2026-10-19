@@ -36,6 +36,7 @@ const WHY: Record<string, string> = {
   big: 'the file was too large to save its previous version',
   unreadable: 'the file was not readable as text',
   budget: 'the turn had too many changes to also save the previous versions',
+  secret: 'the file looks like it holds a secret, so its text was not saved',
 }
 
 /** What a restore of change `index` (or of the whole file in the turn) would do. */

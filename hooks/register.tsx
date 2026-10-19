@@ -10,9 +10,14 @@ import {
   creationHunks,
   formatWhen,
   hunksToText,
+  isInsideProject,
+  isSecretPath,
+  legacyProjectSlug,
   parseFileName,
   projectSlug,
+  prunePlan,
   rowCount,
+  STORE_CAP,
   stringHunks,
   turnFileName,
   windowDiff,
@@ -22,7 +27,7 @@ import { BEFORE_CAP, base as fileName, describe, isWindowsPath, planRestore, sha
 import type { Inspection, RestoreOutcome, RestorePlan, Snapshot } from './restore'
 import { renderHistory, renderViewer } from './text'
 
-const VERSION = '0.4.0'
+const VERSION = '0.5.0'
 const PANE = 'rewind'
 const TITLE = 'Rewind'
 const PAGE = 10
@@ -56,7 +61,7 @@ const view = atom({ plugin: 'rewind', key: 'view' } as const, EMPTY_VIEW)
 
 type $ = EngineInterface
 
-/** Where the mod keeps its files: <claude config dir>/rewind. */
+/** Where the mod keeps its files: <claude config dir>/replay-theater. */
 async function baseDir($: $): Promise<string> {
   const config = await $.env.get('CLAUDE_CONFIG_DIR')
   if (config) return `${config.replace(/[\\/]+$/, '')}/replay-theater`
@@ -78,13 +83,14 @@ async function backupDir($: $): Promise<string> {
 async function listFiles($: $, scope: ReplayView['scope']): Promise<string[]> {
   const dir = await historyDir($)
   const entries = await $.fs.list(dir).catch(() => [])
-  const project = projectSlug(await $.session.cwd())
+  const cwd = await $.session.cwd()
+  const projects = new Set([projectSlug(cwd), legacyProjectSlug(cwd)])
   return entries
     .filter(f => f.kind === 'file')
     .map(f => f.name)
     .filter(name => {
       const meta = parseFileName(name)
-      return meta !== null && (scope === 'all' || meta.project === project)
+      return meta !== null && (scope === 'all' || projects.has(meta.project))
     })
     .sort()
     .reverse()
@@ -227,10 +233,14 @@ async function textReply($: $, act: string, back: number | 'history', page: numb
 function toEntry(tool: 'Edit' | 'Write', input: Record<string, unknown>, result: Record<string, unknown>, at: number): ReplayEntry | null {
   if (result.staged === true) return null
   const path = String(result.filePath ?? input.file_path ?? '')
-  let hunks = (Array.isArray(result.structuredPatch) ? result.structuredPatch : []) as Hunk[]
   let kind: ReplayEntry['kind'] = 'edit'
+  if (tool === 'Write') kind = result.type === 'create' ? 'create' : 'update'
+  const reported = String(input.file_path ?? '')
+  if (isSecretPath(path) || (reported !== '' && isSecretPath(reported))) {
+    return { tool, path, kind, diff: '', added: 0, removed: 0, at, beforeSkipped: 'secret' }
+  }
+  let hunks = (Array.isArray(result.structuredPatch) ? result.structuredPatch : []) as Hunk[]
   if (tool === 'Write') {
-    kind = result.type === 'create' ? 'create' : 'update'
     if (hunks.length === 0 && kind === 'create') hunks = creationHunks(String(result.content ?? input.content ?? ''))
   } else if (hunks.length === 0) {
     hunks = stringHunks(String(result.oldString ?? input.old_string ?? ''), String(result.newString ?? input.new_string ?? ''))
@@ -285,6 +295,7 @@ async function runRestore($: $, plan: RestorePlan, backupFolder: string): Promis
     try {
       backup = `${backupFolder}/${await $.clock.now()}_${fileName(plan.path).replace(/[^\w.-]+/g, '_')}`
       await $.fs.write(backup, seen.currentText)
+      await pruneStore($)
     } catch (err) {
       return { isOk: false, text: `Leaving the file untouched: backup failed (${String(err).slice(0, 120)}).` }
     }
@@ -315,6 +326,23 @@ function fitTurn(entries: ReplayEntry[]): ReplayEntry[] {
     const { before: _before, ...rest } = entry
     return { ...rest, diff: '', truncated: true, beforeSkipped: 'budget' as const }
   })
+}
+
+/** Drops the oldest history, then the oldest backups, once their bytes pass STORE_CAP. */
+async function pruneStore($: $): Promise<void> {
+  try {
+    const history = await historyDir($)
+    const backups = await backupDir($)
+    const listed = async (dir: string, kind: 'history' | 'backup') =>
+      (await $.fs.list(dir).catch(() => [])).filter(f => f.kind === 'file').map(f => ({ name: f.name, size: f.size, kind }))
+    for (const item of prunePlan([...(await listed(history, 'history')), ...(await listed(backups, 'backup'))], STORE_CAP)) {
+      const path = `${item.kind === 'history' ? history : backups}/${item.name}`
+      const argv = isWindowsPath(path) ? ['cmd', '/d', '/c', 'del', '/f', '/q', path] : ['rm', '-f', '--', path]
+      await $.process.run(argv).catch(() => undefined)
+    }
+  } catch {
+    // a full disk of old turns is not a reason to fail the save
+  }
 }
 
 /** Asks what a restore would do, and waits for the person's yes. */
@@ -360,8 +388,11 @@ export const register: Register = on => {
   })
 
   on('turn.start', async ($, e, next) => {
+    if (e.agentId !== undefined) return next(e)
     const startedAt = await $.clock.now()
-    await update($, current, () => ({ turnId: e.turnId, startedAt, prompt: e.text.slice(0, 200) }))
+    const cwd = await $.session.cwd()
+    const prompt = typeof e.text === 'string' ? e.text.slice(0, 200) : ''
+    await update($, current, () => ({ turnId: e.turnId, startedAt, prompt, cwd }))
     await update($, pending, () => [])
     return next(e)
   })
@@ -369,18 +400,24 @@ export const register: Register = on => {
   on('tool.call', async ($, e, next) => {
     const isWatched = e.tool === 'Edit' || e.tool === 'Write'
     const filePath = isWatched ? String((e as { file_path?: unknown }).file_path ?? '') : ''
+    const turn = isWatched ? await read($, current) : null
+    const root = turn?.cwd ?? (isWatched ? await $.session.cwd() : '')
+    const inProject = filePath !== '' && root !== '' && isInsideProject(filePath, root)
     // the file as it stands before the tool touches it: what a restore puts back
-    const snapshot = isWatched && filePath !== '' ? await captureBefore($, filePath, e.tool as 'Edit' | 'Write') : undefined
+    const snapshot = inProject && !isSecretPath(filePath) ? await captureBefore($, filePath, e.tool as 'Edit' | 'Write') : undefined
     const ran = await next(e)
     if (e.tool !== 'Edit' && e.tool !== 'Write') return ran
     if (ran.deny !== undefined || ran.isError === true || ran.result === undefined) return ran
     try {
       const entry = toEntry(e.tool, e as unknown as Record<string, unknown>, ran.result as Record<string, unknown>, await $.clock.now())
-      if (entry !== null) {
-        if (snapshot?.before !== undefined) entry.before = snapshot.before
-        else if (snapshot?.beforeSkipped !== undefined) entry.beforeSkipped = snapshot.beforeSkipped
-        const hash = await captureAfterHash($, entry.path)
-        if (hash !== undefined) entry.afterHash = hash
+      const project = root !== '' ? root : await $.session.cwd()
+      if (entry !== null && isInsideProject(entry.path, project)) {
+        if (entry.beforeSkipped !== 'secret') {
+          if (snapshot?.before !== undefined) entry.before = snapshot.before
+          else if (snapshot?.beforeSkipped !== undefined) entry.beforeSkipped = snapshot.beforeSkipped
+          const hash = await captureAfterHash($, entry.path)
+          if (hash !== undefined) entry.afterHash = hash
+        }
         await update($, pending, list => [...list, entry])
       }
     } catch {
@@ -398,7 +435,7 @@ export const register: Register = on => {
     await update($, current, () => null)
     if (entries.length === 0) return done
     try {
-      const cwd = await $.session.cwd()
+      const cwd = turn?.cwd ?? await $.session.cwd()
       const project = projectSlug(cwd)
       const startedAt = turn?.startedAt ?? entries[0]?.at ?? (await $.clock.now())
       const record: ReplayTurn = {
@@ -412,6 +449,7 @@ export const register: Register = on => {
       }
       const dir = await historyDir($)
       await $.fs.write(`${dir}/${turnFileName(startedAt, entries.length, project)}`, JSON.stringify(record))
+      await pruneStore($)
       const n = entries.length
       $.ui.toast(`🎭 ${n} ${n === 1 ? 'change recorded' : 'changes recorded'} · /rewind to review them`, { timeoutMs: TOAST_SAVED_MS })
     } catch (err) {
@@ -604,7 +642,11 @@ async function drawViewer($: $, e: any, v: ReplayView) {
         <Text wrap="truncate-start">{entry.path}</Text>
         <Box flexDirection="column">
           {source === '' ? (
-            <Text dimColor>(no difference to show: empty or unchanged file)</Text>
+            <Text dimColor>
+              {entry.beforeSkipped === 'secret'
+                ? '(contents not recorded: the file looks like it holds a secret)'
+                : '(no difference to show: empty or unchanged file)'}
+            </Text>
           ) : (
             <Code key="diff" source={source} format="diff" path={entry.path} />
           )}

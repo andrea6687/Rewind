@@ -32,7 +32,11 @@ export function renderViewer(v: ReplayView): string {
   if (turn.prompt !== '') out.push(`> ${turn.prompt.replace(/\s+/g, ' ').slice(0, 160)}`)
   if (v.notice !== null) out.push('', `${v.notice.isOk ? '✔' : '✖'} ${v.notice.text}`)
   out.push('', `**Change ${index + 1}/${turn.entries.length}** · ${entry.tool} · ${KIND[entry.kind]} · +${entry.added} −${entry.removed}`, `\`${entry.path}\``, '')
-  if (diff === '') out.push('_(no difference to show)_')
+  if (diff === '') {
+    out.push(entry.beforeSkipped === 'secret'
+      ? '_(contents not recorded: the file looks like it holds a secret)_'
+      : '_(no difference to show)_')
+  }
   else {
     const f = fence(diff)
     out.push(`${f}diff`, diff, f)

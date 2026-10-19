@@ -4,9 +4,10 @@
 
 Mod per Claude Code (terminale e tab Code di Claude Desktop).
 
-> Ispirato alla mod *Replay Theater* di ClaudeDevs. Questa è un'implementazione indipendente, non ufficiale e non affiliata ad Anthropic, scritta da zero, che aggiunge storico persistente senza limiti, **ripristino dei file con backup** e un fallback testuale per le app che non disegnano i pulsanti.
+> Ispirato alla mod *Replay Theater* di ClaudeDevs. Questa è un'implementazione indipendente, non ufficiale e non affiliata ad Anthropic, scritta da zero, che aggiunge storico persistente, **ripristino dei file con backup** e un fallback testuale per le app che non disegnano i pulsanti.
 
-- Registra ogni **Edit** e **Write** andata a buon fine durante un turno, anche quelle dei subagent.
+- Registra ogni **Edit** e **Write** andata a buon fine dentro la cartella del progetto durante un turno, anche quelle dei subagent. I file fuori dal progetto non vengono registrati.
+- Un file che sembra un segreto (`.env`, `.env.*`, `*.pem`, `*.key`, `id_rsa*`, o un nome che contiene `secret` o `credentials`) viene registrato solo come modificato: niente diff, niente testo precedente e niente backup di quel testo.
 - A fine turno salva il turno su disco e mostra un toast: `🎭 3 changes recorded · /rewind to review them`.
 - `/rewind` apre un pannello che mostra le diff **una alla volta**.
 
@@ -42,19 +43,19 @@ I pulsanti di ripristino stanno nella stessa riga di Prev/Next/Close:
 | **↩ File at turn start** | `u` | compare se nel turno lo stesso file è stato modificato più volte: lo riporta a prima della prima modifica |
 | **↩ Delete created file** | `r` | per i file creati da quella modifica: li elimina |
 
-Il ripristino chiede sempre conferma (**✔ Confirm restore** / `y`, **✖ Cancel** / `x`), e prima di toccare il file salva il contenuto attuale in `~/.claude/rewind/backups/`, quindi anche un ripristino si può annullare. Se il file è cambiato dopo la modifica (anche per modifiche successive) il messaggio lo dice in evidenza: ripristinando si perdono anche quei cambiamenti.
+Il ripristino chiede sempre conferma (**✔ Confirm restore** / `y`, **✖ Cancel** / `x`), e prima di toccare il file salva il contenuto attuale in `~/.claude/replay-theater/backups/` (o `$CLAUDE_CONFIG_DIR/replay-theater/backups/`), quindi anche un ripristino si può annullare. Se il file è cambiato dopo la modifica (anche per modifiche successive) il messaggio lo dice in evidenza: ripristinando si perdono anche quei cambiamenti.
 
 Limiti: funziona per file di testo UTF-8 fino a circa 400.000 caratteri; per i file più grandi, per le modifiche registrate con versioni precedenti alla 0.2.0 o in turni con moltissime modifiche il pulsante è sostituito dal motivo per cui non è disponibile. Non si possono ripristinare le modifiche fatte dai comandi shell (`Bash`), che il mod non registra.
 
 ## Dove finisce lo storico
 
-`~/.claude/replay-theater/history/` (o `$CLAUDE_CONFIG_DIR/replay-theater/history/`; la cartella conserva il nome originale così lo storico già registrato resta visibile): un file JSON per ogni turno che ha modificato qualcosa, chiamato `<timestamp>_<n modifiche>_<progetto>.json`. Nessun limite di numero: per fare pulizia cancelli i file vecchi. Una singola diff oltre 150.000 caratteri viene troncata (lo dice il pannello), e così anche un turno oltre ~3 MB.
+`~/.claude/replay-theater/history/` (o `$CLAUDE_CONFIG_DIR/replay-theater/history/`; la cartella conserva il nome originale così lo storico già registrato resta visibile): un file JSON per ogni turno che ha modificato qualcosa, chiamato `<timestamp>_<n modifiche>_<progetto>.json`. `<progetto>` è il nome della cartella più un hash breve del percorso completo, così due cartelle con lo stesso nome restano distinte; i file salvati dalle versioni precedenti, col solo nome della cartella, compaiono ancora. Storico e backup insieme restano entro 50.000.000 byte (`STORE_CAP`): oltre quella soglia si cancellano i turni più vecchi, poi i backup più vecchi. Restano l'ultimo turno e l'ultimo backup. Una singola diff oltre 150.000 caratteri viene troncata (lo dice il pannello), e così anche un turno oltre 2.000.000 caratteri.
 
 ## Installazione
 
 ### A) Da GitHub (consigliata, una riga)
 
-Metti questa cartella in un repo, per esempio `andrea6687/rewind`, poi da un terminale Claude Code:
+Da un terminale Claude Code:
 
 ```
 /plugin install rewind --marketplace andrea6687/rewind
