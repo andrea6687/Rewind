@@ -15,6 +15,8 @@ type Row = { hunk: number; mark: ' ' | '+' | '-'; text: string; oldNo: number; n
 /** Largest diff kept per change, and per turn file (a $.fs.read takes 4 MiB). */
 export const ENTRY_CAP = 150_000
 export const TURN_CAP = 2_000_000
+/** History files and restore backups together, in bytes. Oldest turns go first. */
+export const STORE_CAP = 50_000_000
 
 const isBody = (line: string) => line[0] === ' ' || line[0] === '+' || line[0] === '-'
 
@@ -131,11 +133,114 @@ export function windowDiff(diff: string, from: number, size: number): string {
   return parts.join('\n')
 }
 
-/** A short, file-name-safe label for a working directory. */
-export function projectSlug(cwd: string): string {
+/** Folder name only: the slug written before 0.5.0. */
+export function legacyProjectSlug(cwd: string): string {
   const base = cwd.replace(/[\\/]+$/, '').split(/[\\/]/).pop() ?? ''
   const slug = base.toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 32)
   return slug === '' ? 'root' : slug
+}
+
+/** Folder name plus a short hash of the full path, so same-named folders stay apart. */
+export function projectSlug(cwd: string): string {
+  return `${legacyProjectSlug(cwd)}-${shortHash(normalizePath(cwd))}`
+}
+
+function shortHash(text: string): string {
+  let h = 0x811c9dc5
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i)
+    h = Math.imul(h, 0x01000193)
+  }
+  return (h >>> 0).toString(16).padStart(8, '0')
+}
+
+/** Separators, `.` and `..`, and the case of a Windows drive letter. */
+function normalizePath(input: string): string {
+  let s = input.replace(/\\/g, '/')
+  let drive = ''
+  const m = /^([A-Za-z]):(.*)$/.exec(s)
+  if (m) {
+    drive = (m[1] ?? '').toUpperCase()
+    s = m[2] ?? ''
+  }
+  const absolute = s.startsWith('/')
+  const parts: string[] = []
+  for (const seg of s.split('/')) {
+    if (seg === '' || seg === '.') continue
+    if (seg === '..') {
+      if (parts.length > 0) parts.pop()
+      else if (!absolute && drive === '') parts.push('..')
+      continue
+    }
+    parts.push(seg)
+  }
+  const body = parts.join('/')
+  if (drive !== '') return body === '' ? `${drive}/` : `${drive}/${body}`
+  return absolute ? `/${body}` : body
+}
+
+function isAbsolutePath(file: string): boolean {
+  return file.startsWith('/') || file.startsWith('\\') || /^[A-Za-z]:/.test(file)
+}
+
+/** True when `file` is the project directory or something inside it. */
+export function isInsideProject(file: string, cwd: string): boolean {
+  if (file.trim() === '') return false
+  const root = normalizePath(cwd).replace(/\/+$/, '') || '/'
+  const full = (isAbsolutePath(file) ? normalizePath(file) : normalizePath(`${root}/${file}`)).replace(/\/+$/, '') || '/'
+  if (full === root) return true
+  const prefix = root === '/' ? '/' : `${root}/`
+  return full.startsWith(prefix)
+}
+
+/** `.env`, `.env.*`, `*.pem`, `*.key`, `id_rsa*`, or a name containing secret/credentials. */
+export function isSecretPath(file: string): boolean {
+  return file.split(/[\\/]/).some(part => {
+    const name = part.toLowerCase()
+    if (name === '' || name === '.' || name === '..') return false
+    if (name === '.env' || name.startsWith('.env.')) return true
+    if (name.endsWith('.pem') || name.endsWith('.key')) return true
+    if (name.startsWith('id_rsa')) return true
+    return name.includes('secret') || name.includes('credentials')
+  })
+}
+
+export type StoredFile = { name: string; size: number; kind: 'history' | 'backup' }
+
+function stampOf(name: string): number {
+  const m = /^(\d+)/.exec(name)
+  return m ? Number(m[1]) : 0
+}
+
+/**
+ * Files to delete so history and backups fit in `cap` bytes.
+ * The newest history file and the newest backup stay.
+ */
+export function prunePlan(files: readonly StoredFile[], cap: number): StoredFile[] {
+  const total = files.reduce((n, f) => n + Math.max(0, f.size), 0)
+  if (total <= cap) return []
+  const aged = (kind: StoredFile['kind']) =>
+    files.filter(f => f.kind === kind).sort((a, b) => {
+      const byTime = stampOf(a.name) - stampOf(b.name)
+      if (byTime !== 0) return byTime
+      if (a.name < b.name) return -1
+      if (a.name > b.name) return 1
+      return 0
+    })
+  const history = aged('history')
+  const backups = aged('backup')
+  const droppable = [
+    ...history.slice(0, Math.max(0, history.length - 1)),
+    ...backups.slice(0, Math.max(0, backups.length - 1)),
+  ]
+  const drop: StoredFile[] = []
+  let used = total
+  for (const f of droppable) {
+    if (used <= cap) break
+    drop.push(f)
+    used -= Math.max(0, f.size)
+  }
+  return drop
 }
 
 /** `<13-digit ms>_<changes>_<project>.json`: sorts by time as text. */

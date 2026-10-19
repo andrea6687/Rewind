@@ -14,7 +14,7 @@ export type ReplayEntry = {
   /** the file's text just before this change; null = the file did not exist */
   before?: string | null
   /** why `before` is missing: too big, not readable as text, or the turn file was full */
-  beforeSkipped?: 'big' | 'unreadable' | 'budget'
+  beforeSkipped?: 'big' | 'unreadable' | 'budget' | 'secret'
   /** SHA-256 of the file's text just after this change */
   afterHash?: string
 }
@@ -32,7 +32,7 @@ export type ReplayTurn = {
 }
 
 /** The turn being recorded right now. */
-export type ReplayCurrent = { turnId: string; startedAt: number; prompt: string }
+export type ReplayCurrent = { turnId: string; startedAt: number; prompt: string; cwd: string }
 
 /** What the pane shows. */
 export type ReplayView = {

@@ -4,9 +4,10 @@ English · [Italiano](README.it.md)
 
 A mod for Claude Code (the terminal and the Code tab of Claude Desktop).
 
-> Inspired by the *Replay Theater* mod by ClaudeDevs. This is an independent, unofficial implementation, not affiliated with Anthropic, written from scratch, that adds unlimited persistent history, **file restore with backup**, and a text fallback for apps that do not draw the buttons.
+> Inspired by the *Replay Theater* mod by ClaudeDevs. This is an independent, unofficial implementation, not affiliated with Anthropic, written from scratch, that adds persistent history, **file restore with backup**, and a text fallback for apps that do not draw the buttons.
 
-- Records every successful **Edit** and **Write** during a turn, including those from subagents.
+- Records every successful **Edit** and **Write** inside the project folder during a turn, including those from subagents. Files outside the project are skipped.
+- A file that looks like a secret (`.env`, `.env.*`, `*.pem`, `*.key`, `id_rsa*`, or a name containing `secret` or `credentials`) is recorded only as modified: no diff, no previous text, and no backup of that text.
 - At the end of the turn it saves the turn to disk and shows a toast: `🎭 3 changes recorded · /rewind to review them`.
 - `/rewind` opens a panel that shows the diffs **one at a time**.
 
@@ -42,19 +43,19 @@ The restore buttons are on the same row as Prev/Next/Close:
 | **↩ File at turn start** | `u` | shown when the same file was changed more than once in the turn: puts it back to before the first change |
 | **↩ Delete created file** | `r` | for files created by that change: deletes them |
 
-Restore always asks for confirmation (**✔ Confirm restore** / `y`, **✖ Cancel** / `x`), and before touching the file it saves the current contents in `~/.claude/rewind/backups/`, so a restore can itself be undone. If the file changed after the change (including later changes) the message says so prominently: restoring also loses those changes.
+Restore always asks for confirmation (**✔ Confirm restore** / `y`, **✖ Cancel** / `x`), and before touching the file it saves the current contents in `~/.claude/replay-theater/backups/` (or `$CLAUDE_CONFIG_DIR/replay-theater/backups/`), so a restore can itself be undone. If the file changed after the change (including later changes) the message says so prominently: restoring also loses those changes.
 
 Limits: it works for UTF-8 text files up to about 400,000 characters; for larger files, for changes recorded with versions earlier than 0.2.0, or in turns with a great many changes, the button is replaced by the reason it is not available. Changes made by shell commands (`Bash`) cannot be restored; the mod does not record them.
 
 ## Where the history goes
 
-`~/.claude/replay-theater/history/` (or `$CLAUDE_CONFIG_DIR/replay-theater/history/`; the folder keeps the original name so history already recorded stays visible): one JSON file for every turn that changed something, named `<timestamp>_<n changes>_<project>.json`. No cap on the number: to clean up, delete the old files. A single diff over 150,000 characters is truncated (the panel says so), and so is a turn over ~3 MB.
+`~/.claude/replay-theater/history/` (or `$CLAUDE_CONFIG_DIR/replay-theater/history/`; the folder keeps the original name so history already recorded stays visible): one JSON file for every turn that changed something, named `<timestamp>_<n changes>_<project>.json`. `<project>` is the folder name plus a short hash of the full path, so two folders with the same name stay apart; files saved by older versions with the folder name alone still show up. History and backups together stay within 50,000,000 bytes (`STORE_CAP`): past that, the oldest turns are deleted, then the oldest backups. The newest turn and the newest backup are kept. A single diff over 150,000 characters is truncated (the panel says so), and so is a turn over 2,000,000 characters.
 
 ## Installation
 
 ### A) From GitHub (recommended, one line)
 
-Put this folder in a repo, for example `andrea6687/rewind`, then from a Claude Code terminal:
+From a Claude Code terminal:
 
 ```
 /plugin install rewind --marketplace andrea6687/rewind
