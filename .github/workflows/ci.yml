@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check install.sh syntax
+        run: bash -n install.sh
+
+      - name: Validate plugin JSON and version
+        run: |
+          python3 - <<'PY'
+          import json, pathlib, re
+          root = pathlib.Path('.')
+          paths = [
+              '.claude-plugin/plugin.json',
+              '.claude-plugin/marketplace.json',
+              'hooks/hooks.json',
+          ]
+          for rel in paths:
+              json.loads((root / rel).read_text())
+          plugin = json.loads((root / '.claude-plugin/plugin.json').read_text())
+          source = (root / 'hooks/register.tsx').read_text()
+          match = re.search(r"const VERSION = '([^']+)'", source)
+          found = match.group(1) if match else None
+          if found != plugin.get('version'):
+              raise SystemExit(f"version mismatch: plugin.json={plugin.get('version')!r} register.tsx={found!r}")
+          print(f"version {plugin['version']} ok")
+          PY
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Run behavioral tests
+        run: bun test

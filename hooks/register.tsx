@@ -14,9 +14,11 @@ import {
   isSecretPath,
   legacyProjectSlug,
   parseFileName,
+  parseTurnJson,
   projectSlug,
   prunePlan,
   rowCount,
+  shortHash,
   STORE_CAP,
   stringHunks,
   turnFileName,
@@ -98,7 +100,7 @@ async function listFiles($: $, scope: ReplayView['scope']): Promise<string[]> {
 
 async function loadTurn($: $, name: string): Promise<ReplayTurn> {
   const dir = await historyDir($)
-  return JSON.parse(await $.fs.read(`${dir}/${name}`)) as ReplayTurn
+  return parseTurnJson(await $.fs.read(`${dir}/${name}`))
 }
 
 /** Opens the turn at `pos` of `files` on `entry` (-1 = its last change). */
@@ -293,7 +295,7 @@ async function runRestore($: $, plan: RestorePlan, backupFolder: string): Promis
   if (seen.exists) {
     if (seen.currentText === undefined) return { isOk: false, text: 'Leaving the file untouched: could not save a backup (unreadable or too large).' }
     try {
-      backup = `${backupFolder}/${await $.clock.now()}_${fileName(plan.path).replace(/[^\w.-]+/g, '_')}`
+      backup = `${backupFolder}/${await $.clock.now()}_${shortHash(plan.path)}_${fileName(plan.path).replace(/[^\w.-]+/g, '_')}`
       await $.fs.write(backup, seen.currentText)
       await pruneStore($)
     } catch (err) {
@@ -415,8 +417,10 @@ export const register: Register = on => {
         if (entry.beforeSkipped !== 'secret') {
           if (snapshot?.before !== undefined) entry.before = snapshot.before
           else if (snapshot?.beforeSkipped !== undefined) entry.beforeSkipped = snapshot.beforeSkipped
-          const hash = await captureAfterHash($, entry.path)
-          if (hash !== undefined) entry.afterHash = hash
+          if (entry.before !== undefined) {
+            const hash = await captureAfterHash($, entry.path)
+            if (hash !== undefined) entry.afterHash = hash
+          }
         }
         await update($, pending, list => [...list, entry])
       }
@@ -505,9 +509,11 @@ export const register: Register = on => {
   })
 }
 
+type RenderEvent = { viewport?: { columns?: number; rows?: number } }
+
 /** The viewer itself, drawn into the pane or into /rewind's output row. */
-async function drawViewer($: $, e: any, v: ReplayView) {
-    const { Box, Text, Button, Code } = $.ui.resolve(e) as any
+async function drawViewer($: $, e: RenderEvent, v: ReplayView) {
+    const { Box, Text, Button, Code } = $.ui.resolve(e)
     const rows = e.viewport?.rows ?? 40
     const close = async () => {
       await update($, view, now => ({ ...now, closed: true }))
@@ -578,15 +584,24 @@ async function drawViewer($: $, e: any, v: ReplayView) {
     }
 
     const turn = v.turn
-    const entry = turn.entries[Math.min(v.entry, turn.entries.length - 1)] as ReplayEntry
+    const index = Math.min(v.entry, turn.entries.length - 1)
+    const entry = turn.entries[index]
+    if (!entry) {
+      return (
+        <Box flexDirection="column">
+          <Text bold>🎭 Rewind</Text>
+          <Text dimColor>Change not found.</Text>
+        </Box>
+      )
+    }
     const room = Math.max(5, Math.min(rows, PANE_ROWS) - 12)
     const lines = rowCount(entry.diff)
     const scroll = Math.min(v.scroll, Math.max(0, lines - room))
     const source = windowDiff(entry.diff, scroll, room)
     const hasPrev = v.entry > 0 || v.turnPos + 1 < total
     const hasNext = v.entry < turn.entries.length - 1 || v.turnPos > 0
-    const planOne = planRestore(turn, Math.min(v.entry, turn.entries.length - 1), 'one')
-    const planFile = planRestore(turn, Math.min(v.entry, turn.entries.length - 1), 'file')
+    const planOne = planRestore(turn, index, 'one')
+    const planFile = planRestore(turn, index, 'file')
     const sameFile = turn.entries.filter(x => x.path === entry.path).length
     const kindLabel = entry.kind === 'create' ? 'new file' : entry.kind === 'update' ? 'rewritten' : 'modified'
     const scrollBy = (delta: number) =>

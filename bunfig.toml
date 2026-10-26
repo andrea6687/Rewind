@@ -1,0 +1,6 @@
+# hooks/*.tsx is the only JSX. Bun resolves this path relative to that folder.
+jsx = "react-jsx"
+jsxImportSource = "../tests/jsx"
+
+[test]
+preload = ["./tests/preload.ts"]
