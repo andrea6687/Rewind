@@ -23,7 +23,8 @@ export function renderViewer(v: ReplayView): string {
   }
   const turn = v.turn
   const index = Math.min(v.entry, turn.entries.length - 1)
-  const entry = turn.entries[index] as ReplayEntry
+  const entry = turn.entries[index]
+  if (!entry) return `🎭 **Rewind**\n\nChange not found.`
   const lines = rowCount(entry.diff)
   const scroll = Math.min(v.scroll, Math.max(0, lines - TEXT_ROWS))
   const diff = windowDiff(entry.diff, scroll, TEXT_ROWS)

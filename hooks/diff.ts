@@ -1,5 +1,6 @@
 // Pure helpers: building, cutting and windowing unified diffs, and naming
 // history files. No `$` here, so the tests can call them directly.
+import type { ReplayTurn } from '../types'
 
 export type Hunk = {
   oldStart: number
@@ -145,7 +146,7 @@ export function projectSlug(cwd: string): string {
   return `${legacyProjectSlug(cwd)}-${shortHash(normalizePath(cwd))}`
 }
 
-function shortHash(text: string): string {
+export function shortHash(text: string): string {
   let h = 0x811c9dc5
   for (let i = 0; i < text.length; i++) {
     h ^= text.charCodeAt(i)
@@ -193,14 +194,18 @@ export function isInsideProject(file: string, cwd: string): boolean {
   return full.startsWith(prefix)
 }
 
-/** `.env`, `.env.*`, `*.pem`, `*.key`, `id_rsa*`, or a name containing secret/credentials. */
+const SECRET_EXACT = new Set(['.env', '.npmrc', '.pypirc', '.netrc', '.htpasswd'])
+const SECRET_EXTS = ['.pem', '.key', '.p12', '.pfx', '.jks']
+const SECRET_PREFIXES = ['.env.', 'id_rsa', 'id_ed25519', 'id_ecdsa', 'id_dsa']
+
+/** Secret basenames, extensions, and SSH key prefixes. `.envrc` stays allowed. */
 export function isSecretPath(file: string): boolean {
   return file.split(/[\\/]/).some(part => {
     const name = part.toLowerCase()
     if (name === '' || name === '.' || name === '..') return false
-    if (name === '.env' || name.startsWith('.env.')) return true
-    if (name.endsWith('.pem') || name.endsWith('.key')) return true
-    if (name.startsWith('id_rsa')) return true
+    if (SECRET_EXACT.has(name)) return true
+    if (SECRET_EXTS.some(ext => name.endsWith(ext))) return true
+    if (SECRET_PREFIXES.some(prefix => name.startsWith(prefix))) return true
     return name.includes('secret') || name.includes('credentials')
   })
 }
@@ -251,6 +256,21 @@ export function turnFileName(startedAt: number, count: number, project: string):
 export function parseFileName(name: string): { startedAt: number; count: number; project: string } | null {
   const m = /^(\d{13})_(\d+)_(.+)\.json$/.exec(name)
   return m ? { startedAt: Number(m[1]), count: Number(m[2]), project: m[3] ?? '' } : null
+}
+
+/** A turn file from disk: JSON plus the fields a later read assumes are there. */
+export function parseTurnJson(raw: string): ReplayTurn {
+  const data = JSON.parse(raw) as Record<string, unknown>
+  if (
+    typeof data !== 'object' || data === null ||
+    typeof data.turnId !== 'string' ||
+    typeof data.startedAt !== 'number' ||
+    typeof data.project !== 'string' ||
+    !Array.isArray(data.entries)
+  ) {
+    throw new Error('Invalid ReplayTurn schema')
+  }
+  return data as unknown as ReplayTurn
 }
 
 const pad = (n: number) => String(n).padStart(2, '0')
