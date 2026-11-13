@@ -1,0 +1,25 @@
+# Local environment. .env.example stays shareable.
+.env
+.env.*
+!.env.example
+
+# Local assistant config only. .claude-plugin/ stays tracked;
+# do not ignore the whole .claude/ or .cursor/ trees.
+.claude/settings.local.json
+.mcp.json
+mcp.json
+CLAUDE.local.md
+
+# Private keys, certificates, and provisioning profiles
+*.pem
+*.p8
+*.p12
+*.key
+*.mobileprovision
+id_rsa
+id_ed25519
+.netrc
+credentials.json
+
+# macOS
+.DS_Store
