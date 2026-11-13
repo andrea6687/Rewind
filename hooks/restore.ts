@@ -1,6 +1,7 @@
 // Putting a file back as it was before a recorded change: what is saved at
 // record time, what a restore plans and checks, and the restore itself.
 import type { ReplayEntry, ReplayTurn } from '../types'
+import { isInsideProject, isSecretPath } from './diff'
 
 /** Largest file text kept per change as its "before". */
 export const BEFORE_CAP = 400_000
@@ -43,6 +44,12 @@ const WHY: Record<string, string> = {
 export function planRestore(turn: ReplayTurn, index: number, mode: 'one' | 'file'): { plan: RestorePlan } | { reason: string } {
   const entry = turn.entries[index]
   if (entry === undefined) return { reason: 'change not found' }
+  if (turn.cwd && !isInsideProject(entry.path, turn.cwd)) {
+    return { reason: 'file is outside the project folder' }
+  }
+  if (isSecretPath(entry.path)) {
+    return { reason: WHY.secret }
+  }
   const same = turn.entries.filter(e => e.path === entry.path)
   const first = mode === 'file' ? same[0] ?? entry : entry
   const last = mode === 'file' ? same[same.length - 1] ?? entry : entry

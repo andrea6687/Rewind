@@ -1,7 +1,9 @@
 import { describe, expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { capHunks, creationHunks, hunksToText, isInsideProject, isSecretPath, legacyProjectSlug, projectSlug, prunePlan, rowCount, STORE_CAP, windowDiff } from '../hooks/diff'
+import { capHunks, creationHunks, hunksToText, isInsideProject, isSecretPath, legacyProjectSlug, parseTurnJson, projectSlug, prunePlan, rowCount, shortHash, STORE_CAP, windowDiff } from '../hooks/diff'
+import { BEFORE_CAP, planRestore } from '../hooks/restore'
+import type { ReplayEntry, ReplayTurn } from '../types'
 
 const SURFACES = ['terminal', 'desktop'] as const
 const PANE = { plugin: 'rewind', component: 'Pane', requestId: 'rewind' } as const
@@ -108,8 +110,41 @@ describe('diff helpers', () => {
     expect(isSecretPath('/work/myproject/.envrc')).toBe(false)
     expect(isSecretPath('C:\\keys\\server.pem')).toBe(true)
     expect(isSecretPath('/work/myproject/id_rsa.pub')).toBe(true)
+    expect(isSecretPath('/work/myproject/id_ed25519')).toBe(true)
+    expect(isSecretPath('/work/myproject/id_ed25519.pub')).toBe(true)
+    expect(isSecretPath('C:\\keys\\id_ecdsa')).toBe(true)
+    expect(isSecretPath('/work/myproject/id_dsa.pub')).toBe(true)
+    expect(isSecretPath('/work/myproject/.npmrc')).toBe(true)
+    expect(isSecretPath('/work/myproject/.pypirc')).toBe(true)
+    expect(isSecretPath('/home/user/.netrc')).toBe(true)
+    expect(isSecretPath('/work/myproject/.htpasswd')).toBe(true)
+    expect(isSecretPath('/work/myproject/cert.p12')).toBe(true)
+    expect(isSecretPath('/work/myproject/cert.pfx')).toBe(true)
+    expect(isSecretPath('/work/myproject/store.jks')).toBe(true)
     expect(isSecretPath('/work/myproject/src/credentials.ts')).toBe(true)
     expect(isSecretPath('/work/myproject/ok.ts')).toBe(false)
+  })
+
+  test('parseTurnJson accepts a turn and rejects a partial file', () => {
+    const raw = JSON.stringify({ turnId: 't', startedAt: 1, project: 'p', entries: [] })
+    expect(parseTurnJson(raw).turnId).toBe('t')
+    expect(() => parseTurnJson('{"turnId":"x"}')).toThrow(/Invalid ReplayTurn schema/)
+    expect(() => parseTurnJson('null')).toThrow(/Invalid ReplayTurn schema/)
+  })
+
+  test('planRestore refuses a path outside the project and a secret path', () => {
+    const entry = (path: string): ReplayEntry => ({ tool: 'Edit', path, kind: 'edit', diff: '', added: 0, removed: 0, at: 1, before: 'saved\n' })
+    const turn = (path: string): ReplayTurn => ({
+      turnId: 't', startedAt: 1, endedAt: 2, prompt: '', cwd: '/work/myproject', project: 'p', entries: [entry(path)],
+    })
+    const secret = 'the file looks like it holds a secret, so its text was not saved'
+    expect(planRestore(turn('/tmp/other.ts'), 0, 'one')).toEqual({ reason: 'file is outside the project folder' })
+    expect(planRestore(turn('../other.ts'), 0, 'one')).toEqual({ reason: 'file is outside the project folder' })
+    expect(planRestore(turn('/work/myproject/.npmrc'), 0, 'one')).toEqual({ reason: secret })
+    expect(planRestore(turn('/work/myproject/id_ed25519'), 0, 'one')).toEqual({ reason: secret })
+    expect(planRestore(turn('/work/myproject/cert.p12'), 0, 'one')).toEqual({ reason: secret })
+    const ok = planRestore(turn('/work/myproject/ok.ts'), 0, 'one')
+    expect('plan' in ok && ok.plan.path).toBe('/work/myproject/ok.ts')
   })
 
   test('oldest turns, then oldest backups, are the ones past the store cap', () => {
@@ -212,6 +247,18 @@ describe('recording and replay', () => {
     expect(await ui.find({ type: 'Code' })).toBeUndefined()
     expect((await ui.find({ type: 'Text', text: /closed/ }))).toBeDefined()
   })
+
+  test('a partial turn file is reported when /rewind opens it', async ($, on) => {
+    const { disk } = world(on)
+    const name = `1759820000000_1_${projectSlug('/work/myproject')}.json`
+    disk.set(`/home/user/.claude/replay-theater/history/${name}`, '{"turnId":"x"}')
+    await $.command.run({ command: 'rewind', args: '', origin: { kind: 'composer' }, presentation: PRESENTATION } as any)
+    const ui = await $.ui.mount({ ...PANE, surface: 'terminal', props: PROPS, viewport: { columns: 120, rows: 40 } })
+    const text = (await ui.find({ type: 'Text', text: /Could not read/ }))?.text
+    expect(text).toContain(`Could not read ${name}`)
+    expect(text).toContain('Invalid ReplayTurn schema')
+    await ui.unmount()
+  })
 })
 
 describe('end-of-turn toasts', () => {
@@ -311,6 +358,52 @@ describe('restoring a file to before a change', () => {
     expect(disk.get('/work/myproject/c.txt')).toBe('a b c\n')
   })
 
+  test('same-named files in different folders get different backup names', async ($, on) => {
+    const { disk } = world(on)
+    disk.set('/work/myproject/src/a/index.ts', 'a\n')
+    disk.set('/work/myproject/src/b/index.ts', 'b\n')
+    await turn($, 't1', 'due index', async () => {
+      await $.tool.call({ tool: 'Edit', file_path: '/work/myproject/src/a/index.ts', old_string: 'a', new_string: 'A' })
+      await $.tool.call({ tool: 'Edit', file_path: '/work/myproject/src/b/index.ts', old_string: 'b', new_string: 'B' })
+    })
+    await $.command.run(OPEN)
+    const ui = await $.ui.mount({ ...PANE, surface: 'terminal', props: PROPS, ...VIEW })
+    await ui.press({ key: 'restore' })
+    await ui.press({ key: 'confirm' })
+    await ui.press({ key: 'next' })
+    await ui.press({ key: 'restore' })
+    await ui.press({ key: 'confirm' })
+    const backups = [...disk.keys()].filter(path => path.includes('/replay-theater/backups/'))
+    expect(backups).toHaveLength(2)
+    expect(backups.some(path => path.includes(shortHash('/work/myproject/src/a/index.ts')))).toBe(true)
+    expect(backups.some(path => path.includes(shortHash('/work/myproject/src/b/index.ts')))).toBe(true)
+    await ui.unmount()
+  })
+
+  test('a file too large to restore is not read again for a hash', async ($, on) => {
+    let reads = 0
+    on('fs.read', async (_$, e, next) => {
+      reads++
+      return next(e)
+    })
+    const { disk } = world(on)
+    disk.set('/work/myproject/small.txt', 'a\n')
+    disk.set('/work/myproject/big.txt', 'z'.repeat(BEFORE_CAP + 1))
+    await $.turn.start({ text: 'sizes', turnId: 'sizes' })
+    reads = 0
+    await $.tool.call({ tool: 'Edit', file_path: '/work/myproject/small.txt', old_string: 'a', new_string: 'A' })
+    expect(reads).toBe(2)
+    reads = 0
+    await $.tool.call({ tool: 'Edit', file_path: '/work/myproject/big.txt', old_string: 'z', new_string: 'Z' })
+    expect(reads).toBe(1)
+    await $.turn.complete({ answer: 'fatto', durationMs: 10, isAborted: false, turnId: 'sizes', reason: 'answer' })
+    const saved = [...disk.entries()].find(([path]) => path.includes('/history/'))
+    const turn = JSON.parse(saved?.[1] ?? '{}')
+    expect(turn.entries.find((e: { path: string }) => e.path.endsWith('big.txt')).beforeSkipped).toBe('big')
+    expect(turn.entries.find((e: { path: string }) => e.path.endsWith('big.txt')).afterHash).toBeUndefined()
+    expect(turn.entries.find((e: { path: string }) => e.path.endsWith('small.txt')).afterHash).toBeDefined()
+  })
+
   test('no restore for a change recorded without its earlier text', async ($, on) => {
     const { disk } = world(on)
     await turn($, 't1', 'edit su file che non c\'era', async () => {
@@ -368,12 +461,16 @@ describe('subagents, secrets, project boundaries and old history', () => {
     const { disk } = world(on)
     disk.set('/work/myproject/.env', 'TOKEN=SUPERSECRETVALUE\n')
     disk.set('/work/myproject/id_rsa', '-----BEGIN KEY SUPERSECRETVALUE-----\n')
+    disk.set('/work/myproject/id_ed25519', 'ed25519 SUPERSECRETVALUE\n')
     disk.set('/work/myproject/.envrc', 'export PUBLIC=1\n')
     disk.set('/work/myproject/ok.ts', 'pubblico\n')
     await turn($, 't1', 'segreti', async () => {
       await $.tool.call({ tool: 'Edit', file_path: '/work/myproject/.env', old_string: 'SUPERSECRETVALUE', new_string: 'OTHERSECRETVALUE' })
       await $.tool.call({ tool: 'Write', file_path: '/work/myproject/certs/server.pem', content: 'CERT SUPERSECRETVALUE\n' })
       await $.tool.call({ tool: 'Edit', file_path: '/work/myproject/id_rsa', old_string: 'KEY', new_string: 'KEY2' })
+      await $.tool.call({ tool: 'Edit', file_path: '/work/myproject/id_ed25519', old_string: 'SUPERSECRETVALUE', new_string: 'OTHER' })
+      await $.tool.call({ tool: 'Write', file_path: '/work/myproject/.npmrc', content: '//registry:_authToken=SUPERSECRETVALUE\n' })
+      await $.tool.call({ tool: 'Write', file_path: '/work/myproject/cert.p12', content: 'P12 SUPERSECRETVALUE\n' })
       await $.tool.call({ tool: 'Write', file_path: '/work/myproject/src/credentials.ts', content: 'export const CREDENTIALS = "SUPERSECRETVALUE"\n' })
       await $.tool.call({ tool: 'Edit', file_path: '/work/myproject/.envrc', old_string: 'PUBLIC', new_string: 'PUBLIC2' })
       await $.tool.call({ tool: 'Edit', file_path: '/work/myproject/ok.ts', old_string: 'pubblico', new_string: 'PUBBLICO' })
@@ -384,6 +481,9 @@ describe('subagents, secrets, project boundaries and old history', () => {
       '/work/myproject/.env',
       '/work/myproject/certs/server.pem',
       '/work/myproject/id_rsa',
+      '/work/myproject/id_ed25519',
+      '/work/myproject/.npmrc',
+      '/work/myproject/cert.p12',
       '/work/myproject/src/credentials.ts',
       '/work/myproject/.envrc',
       '/work/myproject/ok.ts',
