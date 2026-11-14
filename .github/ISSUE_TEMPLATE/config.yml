@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security problem / Problema di sicurezza
+    url: https://github.com/andrea6687/Rewind/security/advisories/new
+    about: Report it privately, please. / Segnalalo in privato, per favore.
+  - name: Install notes / Note di installazione
+    url: https://github.com/andrea6687/Rewind/blob/main/INSTALL.txt
+    about: Install from the folder on Mac, Linux or Windows. / Installa dalla cartella su Mac, Linux o Windows.
