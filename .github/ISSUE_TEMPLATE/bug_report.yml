@@ -1,0 +1,68 @@
+name: Bug report / Segnala un problema
+description: Something doesn't work as expected. / Qualcosa non funziona come previsto.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! Please remove anything private before posting. Do not paste `.env` files, keys, or backups of them.
+        Grazie per la segnalazione! Togli eventuali dati privati prima di pubblicare. Non incollare file `.env`, chiavi o i loro backup.
+  - type: dropdown
+    id: os
+    attributes:
+      label: System / Sistema
+      options:
+        - macOS
+        - Linux
+        - Windows
+    validations:
+      required: true
+  - type: input
+    id: os-version
+    attributes:
+      label: System version / Versione del sistema
+      placeholder: "e.g. macOS 15.1, Ubuntu 24.04, Windows 11 24H2"
+    validations:
+      required: true
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Where you ran /rewind / Dove hai usato /rewind
+      options:
+        - Claude Code terminal
+        - Claude Desktop, Code tab
+        - Not sure / Non so
+    validations:
+      required: true
+  - type: input
+    id: claude-version
+    attributes:
+      label: Claude Code version / Versione di Claude Code
+      placeholder: "e.g. 2.1.292"
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: How you installed Rewind / Come hai installato Rewind
+      options:
+        - ./install.sh
+        - INSTALLA.bat
+        - /plugin install from GitHub
+        - Not sure / Non so
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: Command you ran / Comando eseguito
+      description: The /rewind command, or the install command if the install failed. / Il comando /rewind, o il comando di installazione se è fallita l'installazione.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened, and what you expected / Cosa è successo e cosa ti aspettavi
+    validations:
+      required: true

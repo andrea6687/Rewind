@@ -1,0 +1,24 @@
+name: Idea / Proposta
+description: Suggest an improvement. / Proponi un miglioramento.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would it solve? / Quale problema risolverebbe?
+      description: For example a turn you cannot review, or a file you cannot put back. / Per esempio un turno che non riesci a rivedere, o un file che non riesci a rimettere com'era.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: Your idea / La tua idea
+    validations:
+      required: true
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope
+      options:
+        - label: This is about reviewing changes in my own project, not extracting secrets or getting around Claude's limits. / Riguarda rivedere le modifiche nel mio progetto, non estrarre segreti o aggirare i limiti di Claude.
+          required: true
